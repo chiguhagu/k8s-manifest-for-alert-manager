@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-conf
+  namespace: monitoring
+data:
+  prometheus.yaml: |-
+    global:
+      scrape_interval: 15s
+    rule_files:
+      - /etc/prometheus/rules/*.yaml 
+    alerting:
+      alertmanagers:
+      - scheme: http
+        static_configs:
+        - targets:
+          - "alertmanager:9093"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  rules.yaml: |-
+    groups:
+    - name: example
+      rules:
+      - alert: DeadMansSwitch
+        annotations:
+          description: This is a DeadMansSwitch meant to ensure that the entire Alerting pipeline is functional.
+          summary: Alerting DeadMansSwitch
+        expr: vector(1)
+        labels:
+          severity: none
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.20.1
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yaml'
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/prometheus
+          - name: rule-volume
+            mountPath: /etc/prometheus/rules
+          - name: data-volume
+            mountPath: /prometheus
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-conf
+        - name: rule-volume
+          configMap:
+            name: prometheus-rules
+        - name: data-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+              
